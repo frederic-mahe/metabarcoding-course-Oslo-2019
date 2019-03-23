@@ -377,7 +377,9 @@ Note: Torbjørn can help explaining each line.
 
 Note: from Edgar and Flyvberg, 2015. Merging is an important step that
 can change radically the apparent diversity profile of a community
-(some popular mergers do not cope well with variable length markers)
+(some popular mergers do not cope well with variable length
+markers). Some mergers use the wrong way to compute double-read
+quality values.
 
 
 ## my EE filtering method
@@ -401,11 +403,14 @@ can change radically the apparent diversity profile of a community
 ## Demultiplexing
 
 
-* for each sample,
-* add a unique sequence (tag) to all the sequences of a sample,
+* add a unique short sequence (tag) to all the sequences in a sample,
 * pool all the samples into a library,
 * sequence that library,
 * use the tags to link each sequence to a sample
+
+Note: libraries can be multiplexed too (using indexes). That can lead
+to cross-library contaminations (index jumping, estimated to be around
+0.1% of the reads).
 
 
 ## Tag list
@@ -481,11 +486,33 @@ CCAGCAGCTGCGGTAATTCCAGCTCCAATAGCGTATATTAAAGTTGTTGC...
 CCAGCAGCCGCGGTAATTCCAGCTCCAATAGCGTATATTTAAGTTGTTGC...
 ```
 * first 5 nucleotides are used to delineate clusters,
-* first 25 nucleotides are used to calibrate base-calling
+* first 25 nucleotides are used to calibrate base-calling (expects equal proportions)
 
 Note: Ns introduce variability in the first flow cycles (4 possible
 nucleotides), and variable numbers of N create shifts and even more
 variability in the rest of the flow cycles.
+
+
+## demultiplex with cutadapt
+
+``` bash
+INPUT_FASTQ="ES1A_S2.fastq"
+TAGS="sample_barcode.tsv"
+TMP_BARCODES=$(mktemp)
+
+# cutadapt wants tags in a fasta file, not a table
+awk '{print ">"$1"\n^"$2}' "${TAGS}" > ${TMP_BARCODES}
+
+# demultiplex (tags are 5' anchored)
+cutadapt \
+    --no-indels \
+    -g file:${TMP_BARCODES} \
+    -o "{name}.fastq.gz" ${INPUT_FASTQ}
+
+rm ${TMP_BARCODES}  # clean
+```
+
+Note: launch first and describe while it is running.
 
 
 
@@ -498,7 +525,127 @@ variability in the rest of the flow cycles.
 
 ## Primer clipping
 
-Let's test cutadapt's behavior:
+
+The goal is to search . So far we have used cutadapt to find tags at
+the beginning of sequences. Now we are going to allow cutadapt to
+search anywhere in the reads.
+
+
+## complete script
+
+``` bash
+# Trim primers, convert to fasta and extract expected error values
+PRIMER_F="CCAGCASCYGCGGTAATTCC"
+PRIMER_R="TYRATCAAGAACGAAAGT"
+MIN_LENGTH=32
+MIN_F=$(( ${#PRIMER_F} * 2 / 3 ))  # primer match is >= 2/3 of primer length
+MIN_R=$(( ${#PRIMER_R} * 2 / 3 ))
+CUTADAPT="cutadapt --discard-untrimmed --minimum-length ${MIN_LENGTH}"
+TMP_FASTQ=$(mktemp)
+TMP_FASTQ2=$(mktemp)
+TMP_FASTA=$(mktemp)
+
+for INPUT in S*.fastq.gz ; do
+    LOG="${INPUT/.fastq.gz/.log}"
+    FINAL_FASTA="${INPUT/.fastq.gz/.fas}"
+    QUALITY_FILE="${INPUT/.fastq.gz/.qual}"
+
+    # Reverse-complement fastq file, trim forward & reverse primers
+    # (search normal and antisens dataset)
+    (zcat "${INPUT}"
+    vsearch \
+         --quiet \
+         --fastx_revcomp "${INPUT}" \
+         --fastqout -) | \
+        ${CUTADAPT} -g "${PRIMER_F}" -O "${MIN_F}" - 2> "${LOG}" | \
+        ${CUTADAPT} -a "${PRIMER_R}" -O "${MIN_R}" - 2>> "${LOG}" > "${TMP_FASTQ}"
+
+    # Discard sequences containing Ns, add expected error rates
+    vsearch \
+        --quiet \
+        --fastq_filter "${TMP_FASTQ}" \
+        --fastq_maxns 0 \
+        --relabel_sha1 \
+        --eeout \
+        --fastqout "${TMP_FASTQ2}" 2>> "${LOG}"
+
+    # Discard sequences containing Ns, convert to fasta
+    vsearch \
+        --quiet \
+        --fastq_filter "${TMP_FASTQ}" \
+        --fastq_maxns 0 \
+        --fastaout "${TMP_FASTA}" 2>> "${LOG}"
+
+    # Dereplicate at the study level
+    vsearch \
+        --quiet \
+        --derep_fulllength "${TMP_FASTA}" \
+        --sizeout \
+        --fasta_width 0 \
+        --relabel_sha1 \
+        --output "${FINAL_FASTA}" 2>> "${LOG}"
+
+    # Discard quality lines, extract hash, expected error rates and read length
+    sed 'n;n;N;d' "${TMP_FASTQ2}" | \
+        awk 'BEGIN {FS = "[;=]"}
+             {if (/^@/) {printf "%s\t%s\t", $1, $3} else {print length($1)}}' | \
+                 tr -d "@" | \
+                 sort -k3,3n -k1,1d -k2,2n | \
+                 uniq --check-chars=40 > "${QUALITY_FILE}"
+done
+
+# Clean
+rm -f "${TMP_FASTQ}" "${TMP_FASTA}" "${TMP_FASTQ2}"
+```
+
+Note: this script does a lot of things, and it loops other all fastq
+files. Keep in mind you don't need to understand all the
+code. Usually, you just need to change file names at the beginning to
+adapt it to your dataset. Let's look at it step-by-step. This script
+could be much more compact if we were to use pipes, but it would be
+also less readable.
+
+
+## fastq reverse-complement
+
+Let's process S001.fastq.gz:
+
+``` bash
+# search normal and antisens dataset
+(zcat S001.fastq.gz
+ vsearch \
+     --quiet \
+     --fastx_revcomp S001.fastq.gz \
+     --fastqout -) | \
+     ...
+```
+
+Note: reads are reversed and complemented. Usefull when sequencing
+direction is random, and reads can be in any orientation. Not very
+frequent though.
+
+
+## trim
+
+``` bash
+... | \
+    cutadapt \
+        --discard-untrimmed \
+        --minimum-length 32 \
+        -g "${PRIMER_F}" \
+        -O "${MIN_F}" - 2> "${LOG}" | \
+    cutadapt \
+        --discard-untrimmed \
+        --minimum-length 32 \
+        -a "${PRIMER_R}" \
+        -O "${MIN_R}" - 2>> "${LOG}" > "${TMP_FASTQ}"
+```
+
+Note: eliminate reads of length below 32 nucleotides, eliminate reads
+that do not contain the primers.
+
+
+check what cutadapt does:
 
 ``` bash
 # -g, cut after the occurence closest to 5'
@@ -518,8 +665,136 @@ aaa
 ```
 
 
+## convert to fasta
+
+``` bash
+# convert to fasta (discard reads with Ns)
+vsearch \
+    --quiet \
+    --fastq_filter "${TMP_FASTQ}" \
+    --fastq_maxns 0 \
+    --fastaout "${TMP_FASTA}"
+```
+
+
+## dereplicate
+
+``` bash
+# Dereplicate at the sample level
+vsearch \
+    --quiet \
+    --derep_fulllength "${TMP_FASTA}" \
+    --sizeout \
+    --fasta_width 0 \
+    --relabel_sha1 \
+    --output S001.fas
+```
+
+Note: discard read names and replace them with hash-values.
+
+
+``` text
+>f414cfec8c1cc3973e95e67cff46299a00e8368a;size=8204
+AGCTCCAATAGCGTATATTTAAGTTGTTGCAGTTAAAAAGCTCGTAGTTGGATCTTGGGTCGTAAAGGTCGGTCCGCCTACTCGGTGTGCACCTGCCCTTCCGTCCCTTTTGCCGGCGGCGTGCTCCTGGCCTTAATTGGCTGGGTCGCGGTTCCGGCGTTGTTACTTTGAAAAAATTAGAGTGCTCAAAGCAAGCTTATGCTCTGAATACATTAGCATGGAATAACGCGATAGGAGTCTGGTCCTATTGTGTTGGCCTTCGGGACCGGAGTAATGATTAATAGGGACTGTCGGGGGCATTCGTATTTCATTGTCAGAGGTGAAATTCTTGGATTTATGAAAGACGAACCACTGCGAAAGCATTTGCCAAGGATGTTTTCA
+>ea5b349a8215a8b8ca2de29f0a33087b7c7d5e77;size=496
+AGCTCCAATAGCGTATATTTAAGTTGTTGCAGTTAAAAAGCTCGTAGTTGGATTTTGGGTTGGGTCGATCGGTCCGCCTTTGGTGTGCACCTGTCGTCTCGTCCCTTCTGCCGGCGATACGCTCCTGGCCTTAATTGGCCGGGTCGTGCCTCCGGCGCTGTTACTTTGAAGAAATTAGAGTGCTCAAAGCAAGCCTACGCTCTGGATACATTAGCATGGGATAACACCATAGGATTTCGATCCTATTCTGTTGGCCTTCGGGATCGGAGTAATGATTAACAGGGACAGTCGGGGGCATTCGTATTTCATAGTCAGAGGTGAAATTCTTGGATTTATGAAAGACGAACAACTGCGAAAGCATTTGCCAAGGATGTTTTCA
+>12ef3a4e79dd0f7419f257c7641963e49c83d4fa;size=199
+AGCTCCAATAGCGTATATTTAAGTTGTTGCAGTTAAAAAGCTCGTAGTTGGATCTTGGGTCGTAAAGGTCGGTCCGCCTACTCGGTGTGCACCTGCCCTTCCGTCCCTTTTGCCGGCGGCGTGCTCCTGGCCTTAATTGGCTGGGTCGCGGTTCCGGCGTTGTTACTTTGAAAAAATTAGAGTGCTCAAAGCAAGCTTATGCTCTGAATACATTAGCATGGAATAACGCGATAGGAGTCTGGTCCTATTGTGTTGGCCTTCGGGACCGGAGTAATGATTAATAGGGACTGTCGGGGGCATTCGTATTTCAATGTCAGAGGTGAAATTCTTGGATTTATGAAAGACGAACCACTGCGAAAGCATTTGCCAAGGATGTTTTCA
+>16b79e33e7897ca08ecaa282dc4b4ba1e6d6b460;size=166
+AGCTCCAATAGCGTATATTAAAGTTGTTGCAGTTAAAAAGCTCGTAGTTGGATCTCGGGTCCAGGCTCGCGGTTCGTTTCGCGACGATACTGCCCGTCCTGACCTACCTCCCGGTTTTCCCCCGGTGCTCTTCGCTGAGTGCCTCGGGTGGCCGGAACGTTTACTTTGAAAAAATTAGAGTGCTCAAAGCAGGCAGTCTGCCTGAATAACCGCGCATGGAATAATGGAATAGGACCTCGGTTCTATTTTGTTGGTTTTCGGAACTTGAGGTAATGATTAAGAGGGACAGACGGGGGCATTCGTATTACGGTGTTAGAGGTGAAATTCTTGGATCGCCGTAAGACGAACTACTGCGAAAGCATTTGCCAAGAATGTTTTCA
+```
+
+
+## hash values as sequence names
+
+* easy to compute,
+* compact fix length name,
+* readable (you get use to it),
+* a given sequence will always produce the same hash,
+* allows cross-studies comparisons
+
+
+## compute expected error values
+
+``` bash
+# and discard reads with Ns
+vsearch \
+    --quiet \
+    --fastq_filter "${TMP_FASTQ}" \
+    --fastq_maxns 0 \
+    --relabel_sha1 \
+    --eeout \
+    --fastqout "${TMP_FASTQ2}"
+```
+
+Note: in parallel to the fasta conversion, we compute expected error
+values and we extract them for later usage.
+
+
+## extract expected error values
+
+``` bash
+# extract hash, expected error rates and read length
+sed 'n;n;N;d' "${TMP_FASTQ2}" | \
+    awk 'BEGIN {FS = "[;=]"}
+               {if (/^@/) {printf "%s\t%s\t", $1, $3}
+                else {print length($1)}}' | \
+                   tr -d "@" | \
+                   sort -k3,3n -k1,1d -k2,2n | \
+                   uniq --check-chars=40 > S001.qual
+```
+
+
+``` bash
+head S001.qual
+```
+
+``` text
+dd565a212fcb2c31c1d805753c45a264223da3a2	0.0036	44
+5f745d9ae8bdb14d84d9951c6fa10e0eb668dc79	0.0273	93
+f9e090a0724048b3854b2683da4f8167bb5ebfa9	0.0074	93
+6510220e6c2e1954cbeb78625db4c3f8da9e24ea	0.0075	95
+2daf54b6c5f1bdcd300b7e2da9d178c8c1a02a93	0.0079	100
+7b8f17246a09fba90892bd442394b7511c4179dc	0.0079	100
+7a38a897a9f3d7d992a31afc85a1210435707767	0.0114	143
+0efb5c8e79af00068e69369c60954cf47b0a0f0c	0.0114	144
+380c8720e39965336eb996311b0333af93afeb9d	0.0114	144
+57eea90eb9599ddc6a16bd4badcbacd2895454c3	0.0114	144
+```
+
+keeps the lowest EE for each sequence
+
+
+The `for` loop repeats the process for each fastq file in the project.
+
+
+
+<!-- ----------------------------------------------------------------
+
+                          Global clustering
+
+    ----------------------------------------------------------------
+-->
+
+## Clustering
+
 
 ## Global dereplication
+
+``` bash
+## pool all samples and dereplicate
+cat ../data/S[0-9][0-9]*.fas | \
+    vsearch \
+        --derep_fulllength - \
+        --sizein \
+        --sizeout \
+        --fasta_width 0 \
+        --output Boreal_forest_soils_18SV4_48_samples.fas
+```
+
+Note: we need to dereplicate first. This time we use --sizein to take
+into account the results of sample-level dereplications.
+
 
 ``` text
 vsearch v2.12.0_linux_x86_64, 376.6GB RAM, 48 cores
@@ -532,8 +807,33 @@ Sorting 100%
 Writing output file 100%
 ```
 
+Note: note the discrepancy between average and mediane. vsearch is
+your tool in a way, feel free to ask for features or clarifications if
+your needs are not covered.
+
 
 ## Clustering
+
+``` bash
+## Clustering
+FINAL_FASTA="Boreal_forest_soils_18SV4_48_samples.fas"
+swarm \
+    -d 1 \
+    -f \
+    -t ${THREADS} \
+    -z \
+    -i "${FINAL_FASTA/.fas/_1f.struct}" \
+    -s "${FINAL_FASTA/.fas/_1f.stats}" \
+    -w "${TMP_REPRESENTATIVES}" \
+    -o "${FINAL_FASTA/.fas/_1f.swarms}" \
+    "${FINAL_FASTA}"
+```
+
+Note: swarm outputs clusters and cluster representatives in fasta
+format. swarm can also output interesting stats and a description of
+the internal structure of the clusters. We are going to use all these
+files.
+
 
 ``` text
 Swarm 2.2.2 [Jan 21 2019 22:29:45]
@@ -557,41 +857,253 @@ Threads:           1
 Break OTUs:        Yes
 Fastidious:        Yes, with boundary 3
 
-Reading database:  100%  
-Indexing database: 100%  
+Reading database:  100%
+Indexing database: 100%
 Database info:     93905369 nt in 248072 sequences, longest 539 nt
-Hashing sequences: 100%  
-Clustering:        100%  
+Hashing sequences: 100%
+Clustering:        100%
 
 Results before fastidious processing:
 Number of swarms:  86193
 Largest swarm:     36648
 
-Counting amplicons in heavy and light swarms 100%  
+Counting amplicons in heavy and light swarms 100%
 Heavy swarms: 7537, with 167534 amplicons
 Light swarms: 78656, with 80538 amplicons
 Total length of amplicons in light swarms: 30508515
 Bloom filter: bits=16, m=3416953680, k=11, size=407.3MB
-Adding light swarm amplicons to Bloom filter 100%  
+Adding light swarm amplicons to Bloom filter 100%
 Generated 204824711 variants from light swarms
-Checking heavy swarm amplicons against Bloom filter 100%  
+Checking heavy swarm amplicons against Bloom filter 100%
 Heavy variants: 425554746
 Got 135072 graft candidates
-Grafting light swarms on heavy swarms 100%  
+Grafting light swarms on heavy swarms 100%
 Made 31505 grafts
 
-Writing swarms:    100%  
-Writing seeds:     100%  
-Writing structure: 100%  
-Writing stats:     100%  
+Writing swarms:    100%
+Writing seeds:     100%
+Writing structure: 100%
+Writing stats:     100%
 
 Number of swarms:  54688
 Largest swarm:     43300
 Max generations:   15
 ```
 
+Note: swarm's log contains a lot of information. The most important
+ones are the number of clusters, the number of unique sequences in the
+largest cluster, and the memory consumption. The term OTU is now used
+to designate 97%-based clusters. In that sense swarm produces ASVs.
+
+
+## stats file
+
+``` text
+43300	386975	f414cfec8c1cc3973e95e67cff46299a00e8368a	221209	36958	15	15
+9843	89595	ea5b349a8215a8b8ca2de29f0a33087b7c7d5e77	52845	8270	9	9
+4328	28990	16b79e33e7897ca08ecaa282dc4b4ba1e6d6b460	16362	3303	5	5
+4766	33818	d6b85081181a3db6eaf25802a67c3f796bb3f27a	14970	3309	8	8
+3682	22627	0c325f613a453023deeab86ac6bbe2e6d46261fe	11370	2749	8	8
+2790	18567	b36588b4e56203aab87f970e1f96a2bc88b503d9	9374	1959	5	5
+2206	14581	05ea896948cbe431843a24d6913a3a7824a86c6c	9024	1559	6	6
+729	10897	d7075b3abeb23e4280d0eddbb917c2b265a73955	8404	409	3	3
+7024	27342	68ea7ef4166ab17957de23df7876c70c6b19fa1c	8198	5529	9	9
+3233	18277	4d53f7da17c0c170de344ddd8a02fffa979dc975	7106	2325	6	6
+```
+
+Note: describe the first OTU (unique, reads, seed, seed abundance,
+sequence;size=1, number of steps. 15 steps, is that a lot? not really,
+aggregation paths are not straightforward. We can actually compute for
+each sequence in the cluster its actual number of differences with the
+seed.
+
+
+![steps_vs_pairwise_distanc](./images/steps_vs_pairwise_distance_example.png)
+
+Note: it is far less that expected, and rarely more than 10
+differences for 380 bp sequences (2.6% divergence).
+
+
+## struct file
+
+``` text
+f414cfec8c1cc3973e95e67cff46299a00e8368a	0e0f4fe23436e7a5df250f03f2446c2ea347cde8	1	1	1
+f414cfec8c1cc3973e95e67cff46299a00e8368a	12ef3a4e79dd0f7419f257c7641963e49c83d4fa	1	1	1
+f414cfec8c1cc3973e95e67cff46299a00e8368a	e74f16e7aaeaae903b09ddb6d9f16c66acd47f9a	1	1	1
+f414cfec8c1cc3973e95e67cff46299a00e8368a	cee77b2ab82a0fccc51a208174dfba414a788059	1	1	1
+f414cfec8c1cc3973e95e67cff46299a00e8368a	1cc192bab8b1ae28aadbaa4baa849a9b0ab47c92	1	1	1
+f414cfec8c1cc3973e95e67cff46299a00e8368a	f1cb3936a60fd44b23636cecc53fa57fdc1488f4	1	1	1
+f414cfec8c1cc3973e95e67cff46299a00e8368a	f66a9577412ede9d25af6fcfce1e69a2831fa221	1	1	1
+f414cfec8c1cc3973e95e67cff46299a00e8368a	c5c747056ba9ebe5754da85b2055593681afd860	1	1	1
+f414cfec8c1cc3973e95e67cff46299a00e8368a	5ed576304ceb2366ab38e9e5c0bce8ffbc975414	1	1	1
+f414cfec8c1cc3973e95e67cff46299a00e8368a	298d9e7031aec43ddcfb190a22b0708ad35eda69	1	1	1
+```
+
+Note: X is the parent of Y (1 difference), we are in layer Z.
+
+
+## representatives
+
+``` text
+>f414cfec8c1cc3973e95e67cff46299a00e8368a;size=386975;
+AGCTCCAATAGCGTATATTTAAGTTGTTGCAGTTAAAAAGCTCGTAGTTGGATCTTGGGTCGTAAAGGTCGGTCCGCCTACTCGGTGTGCACCTGCCCTTCCGTCCCTTTTGCCGGCGGCGTGCTCCTGGCCTTAATTGGCTGGGTCGCGGTTCCGGCGTTGTTACTTTGAAAAAATTAGAGTGCTCAAAGCAAGCTTATGCTCTGAATACATTAGCATGGAATAACGCGATAGGAGTCTGGTCCTATTGTGTTGGCCTTCGGGACCGGAGTAATGATTAATAGGGACTGTCGGGGGCATTCGTATTTCATTGTCAGAGGTGAAATTCTTGGATTTATGAAAGACGAACCACTGCGAAAGCATTTGCCAAGGATGTTTTCA
+>ea5b349a8215a8b8ca2de29f0a33087b7c7d5e77;size=89595;
+AGCTCCAATAGCGTATATTTAAGTTGTTGCAGTTAAAAAGCTCGTAGTTGGATTTTGGGTTGGGTCGATCGGTCCGCCTTTGGTGTGCACCTGTCGTCTCGTCCCTTCTGCCGGCGATACGCTCCTGGCCTTAATTGGCCGGGTCGTGCCTCCGGCGCTGTTACTTTGAAGAAATTAGAGTGCTCAAAGCAAGCCTACGCTCTGGATACATTAGCATGGGATAACACCATAGGATTTCGATCCTATTCTGTTGGCCTTCGGGATCGGAGTAATGATTAACAGGGACAGTCGGGGGCATTCGTATTTCATAGTCAGAGGTGAAATTCTTGGATTTATGAAAGACGAACAACTGCGAAAGCATTTGCCAAGGATGTTTTCA
+>d6b85081181a3db6eaf25802a67c3f796bb3f27a;size=33818;
+AGCTCCAATAGCGTATATTTAAGTTGTTGCAGTTAAAAAGCTCGTAGTTGGATCTCGGGACGGGGAGAGCGGTCCGCCTCTTCTGGTGTGCACTGATCTCTCCGTCCTTTCTGTCGGGGACGCGCTCCTGGCCTTGATTGGCTGGGACGCGGAGTCGACGACGTTACTTTGAAAAAATTAGAGTGCTCAAAGCAAGCCTATGCTCTGAATACATTAGCATGGAATAACGCGATAGGACTCTGGTCCTGTTCCGTTGGTCTTCGGGACCGGAGTAATGATTAATAGGGACGGTTGGGGGCATTCGTATTTCATTGTCAGAGGTGAAATTCTTGGATTTATGAAAGACGAACTTCTGCGAAAGCATTTGCCAAGGATGTTTTCA
+>16b79e33e7897ca08ecaa282dc4b4ba1e6d6b460;size=28990;
+AGCTCCAATAGCGTATATTAAAGTTGTTGCAGTTAAAAAGCTCGTAGTTGGATCTCGGGTCCAGGCTCGCGGTTCGTTTCGCGACGATACTGCCCGTCCTGACCTACCTCCCGGTTTTCCCCCGGTGCTCTTCGCTGAGTGCCTCGGGTGGCCGGAACGTTTACTTTGAAAAAATTAGAGTGCTCAAAGCAGGCAGTCTGCCTGAATAACCGCGCATGGAATAATGGAATAGGACCTCGGTTCTATTTTGTTGGTTTTCGGAACTTGAGGTAATGATTAAGAGGGACAGACGGGGGCATTCGTATTACGGTGTTAGAGGTGAAATTCTTGGATCGCCGTAAGACGAACTACTGCGAAAGCATTTGCCAAGAATGTTTTCA
+```
+
+Note: abundance is the total number of reads in that cluster. 
+
+
+<!-- ----------------------------------------------------------------
+
+                            Extra data
+
+    ----------------------------------------------------------------
+-->
+
+## Useful extra data
+
+
+``` bash
+cd ../results/
+```
+
+
+## Global expected error values
+
+``` bash
+## Build expected error file
+sort \
+    -k3,3n \
+    -k1,1d \
+    -k2,2n \
+    --merge ../data/S[0-9][0-9]*.qual | \
+    uniq \
+        --check-chars=40 \
+        > Boreal_forest_soils_18SV4_48_samples.qual
+```
+
+Note: keep for each sequence the lowest EE value observed in any of
+our sample.
+
+
+## Global sequence distribution
+
+``` bash
+## sequence <-> sample relations
+for f in ../data/S[0-9][0-9]*.fas ; do
+    grep -H "^>" "${f}"
+done | \
+    sed 's/.*\/// ; s/.fas:>/\t/ ; s/;size=/\t/ ; s/;$//' | \
+    awk 'BEGIN {FS = OFS = "\t"} {print $2, $1,$3}' \
+        > Boreal_forest_soils_18SV4_48_samples.distr
+```
+
+Note: keep for each sequence the lowest EE value observed in any of
+our sample.
+
+
+``` bash
+head Boreal_forest_soils_18SV4_48_samples.distr
+```
+
+``` text
+f414cfec8c1cc3973e95e67cff46299a00e8368a	S001	7369
+16b79e33e7897ca08ecaa282dc4b4ba1e6d6b460	S001	679
+ea5b349a8215a8b8ca2de29f0a33087b7c7d5e77	S001	458
+1f51f06217fa2ac348b50fea587702e29bfe1f1c	S001	315
+288366fe126296cb6c6aec488dde3b25a6385d5f	S001	243
+f59d28a1e80d582e07d0b224f07ac6e360a8acef	S001	154
+e74f16e7aaeaae903b09ddb6d9f16c66acd47f9a	S001	139
+be8e83ba27fa599c1eccb416e06131870ba101e6	S001	119
+324f9ad3b7651dbbca36abd62ed9c39238db12c1	S001	98
+2ba9bb0fe66318a974db3a580b23b3b1691f4a54	S001	87
+```
+
+Note: every sequence in the dataset, the samples where it occurs, and
+its abundance in that sample.
+
+
+## Local cluster seeds
+
+``` bash
+  ## clusterize each fasta file independently and get a list of OTU
+  ## seeds (size 2+ only)
+  i=0
+  for FASTA in ../data/S[0-9][0-9]*.fas ; do
+      FASTA_FILE="${FASTA/*\//}"
+      FASTA_FILE="${FASTA_FILE/.fas/}"
+      echo $(( ++i )) ${FASTA_FILE} > /dev/stderr
+      "${SWARM}" \
+          -d 1 \
+          -f \
+          -z \
+          -t "${THREADS}" \
+          -l /dev/null \
+          -o /dev/null \
+          -s - \
+          "${FASTA}" | \
+          awk \
+              -v FASTA_FILE="${FASTA_FILE}" \
+              'BEGIN {FS = OFS = "\t"}
+               $2 > 2 {print FASTA_FILE, $0}'
+  done > Boreal_forest_soils_18SV4_48_samples_per_sample_OTUs.stats
+```
+
+Note: TODO explain how it works.
+
+
+``` text
+S001    2965    13903   f414cfec8c1cc3973e95e67cff46299a00e8368a        7369    2306    6       6
+S001    552     1522    16b79e33e7897ca08ecaa282dc4b4ba1e6d6b460        679     473     4       4
+S001    311     873     ea5b349a8215a8b8ca2de29f0a33087b7c7d5e77        458     264     4       4
+S001    220     593     1f51f06217fa2ac348b50fea587702e29bfe1f1c        315     199     3       3
+S001    184     471     288366fe126296cb6c6aec488dde3b25a6385d5f        243     168     3       3
+S001    131     314     f59d28a1e80d582e07d0b224f07ac6e360a8acef        154     119     2       2
+S001    59      186     be8e83ba27fa599c1eccb416e06131870ba101e6        119     52      2       2
+S001    58      163     324f9ad3b7651dbbca36abd62ed9c39238db12c1        98      54      2       2
+S001    73      182     2ba9bb0fe66318a974db3a580b23b3b1691f4a54        87      66      3       3
+S001    64      166     1dc51b7e4b3fa9ea546f0ef8afd89388484bf901        75      56      2       2
+S001    60      144     0c325f613a453023deeab86ac6bbe2e6d46261fe        70      55      2       2
+S001    47      111     08a5fe22b04b50169af6793e621be9649b12b798        55      41      4       4
+S001    55      114     5d117c4ea1abf57ad3d031e379afc283e6a8ebc2        53      48      2       2
+S001    39      93      405908dae0e618d416452e2c938b30ae36b12040        52      36      2       2
+S001    38      86      7263c21dadfb866fe5f42503e0750b340c1772fa        48      36      3       3
+S001    41      114     da5fbd349893e0d9f6780235339ea8a0dd8e3358        42      38      3       3
+```
+
+
+
+<!-- ----------------------------------------------------------------
+
+                          Chimera detection
+
+    ----------------------------------------------------------------
+-->
+
+## Chimeras
+
+Note: TODO explain what they are.
+
 
 ## Chimera detection
+
+``` bash
+REPRESENTATIVES="Boreal_forest_soils_18SV4_48_samples_1f_representatives.fas"
+UCHIME=${REPRESENTATIVES/.fas/.uchime}
+
+vsearch \
+    --uchime_denovo "${REPRESENTATIVES}" \
+    --uchimeout "${UCHIME}"
+```
+
+Note: vsearch reimplements uchime, the most widely used chimera
+detection tool. There is room for improvement.
+
 
 ``` text
 vsearch v2.12.0_linux_x86_64, 376.6GB RAM, 48 cores
@@ -610,6 +1122,104 @@ Taking abundance information into account, this corresponds to
 and 8076 (0.8%) borderline sequences in 1056917 total sequences.
 ```
 
+Note: a high number of chimeras. This is usual for long markers such
+as 18S V4. The data loss is small in terms of reads (6.5% in total). 
+
+
+Chimera detection is complex and should be a priority research
+field. Come and help us!
+
+
+
+<!-- ----------------------------------------------------------------
+
+                        Taxonomic assignment
+
+    ----------------------------------------------------------------
+-->
+
+## Taxonomic assignment
+
+
+## Reference dataset
+
+* trim reference sequences (cutadapt),
+* allow global pairwise alignments between env and ref
+
+
+## pre-filter sequences
+
+``` bash
+# eliminate chimeras and singletons first
+QUERY="Boreal_forest_soils_18SV4_48_samples_1f_representatives.fas"
+UCHIME="${QUERY/.fas/.uchime}"
+MIN_ABUNDANCE=2
+
+awk '$NF == "N" {print $2}' "${UCHIME}" | \
+    grep --no-group-separator -A 1 -F -f - "${QUERY}" | \
+    vsearch \
+        --fastx_filter - \
+        --sizein \
+        --minsize ${MIN_ABUNDANCE} \
+        --sizeout \
+        --quiet \
+        --fastaout - | \
+    ...
+```
+
+Note: eiminate sequences that are not chimeras, in the remaining
+cluster representatives, eliminate those with an abundance of 1. I do
+not recommend to eliminate chimeras before taxonomic assignment. If a
+chimera is 100% identical to a reference sequence, then it is a false
+positive (not a chimera) or a sign that the matching reference should
+be investigated.
+
+
+## Taxonomic assignment
+
+``` bash
+## Taxonomic assignment, search for best hits
+QUERY="Boreal_forest_soils_18SV4_48_samples_1f_representatives.fas"
+DATABASE="../references/pr2_version_4.11.1_CCAGCASCYGCGGTAATTCC_TYRATCAAGAACGAAAGT.fas"
+
+... | \
+    vsearch \
+        --usearch_global - \
+        --threads ${THREADS} \
+        --db "${DATABASE}" \
+        --dbmask none \
+        --qmask none \
+        --rowlen 0 \
+        --notrunclabels \
+        --userfields query+id1+target \
+        --maxaccepts 0 \
+        --maxrejects 32 \
+        --top_hits_only \
+        --output_no_hits \
+        --id 0.5 \
+        --iddef 1 \
+        --userout - | \
+    sed 's/;size=/_/ ; s/;//' > hits.representatives
+```
+
+Note: vsearch compares each environmental sequence to all references,
+and align the most similar (strict similarity, terminal gaps are taken
+into account).
+
+
+## Last-common ancestor
+
+
+
+<!-- ----------------------------------------------------------------
+
+                         Build OTU table
+
+    ----------------------------------------------------------------
+-->
+
+## Merge data and apply basic filtering
+
 
 
 
@@ -624,6 +1234,14 @@ and 8076 (0.8%) borderline sequences in 1056917 total sequences.
 
 Save what can be saved below a certain threshold. Add the weight of
 small OTUs to bigger ones.
+
+
+
+## Conclusion
+
+Metabarcoding's main challenge is noise. Bioinformatics can solve part
+of the problem, but robust experimental designs with replicates and
+controls can do wonders.
 
 <!-- two newlines for a new vertical slide  -->
 <!-- three newlines for a new horizontal slide  -->
