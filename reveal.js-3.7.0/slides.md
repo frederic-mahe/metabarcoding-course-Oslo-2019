@@ -9,7 +9,8 @@
     ----------------------------------------------------------------
 -->
 ## Metabarcoding
-#### child of phylogeny
+#### born of phylogeny
+
 Note: to build a phylogeny, one needs to sequence the same gene from
     many known species. Once such a reference database is available,
     barcoding and metabarcoding become possible (sequence-based
@@ -192,10 +193,10 @@ risk, Q30 means 0.1% and Q40 means 0.01%.
 ## FASTQ format
 
 * [FASTQ](https://en.wikipedia.org/wiki/FASTQ_format#Encoding)
-* dominating
+* most frequent format
 * human-readable
+* hard to parse
 * encode quality values (probability of error for each position)
-* hard to parse,
 * encoding type must be guessed
 
 
@@ -240,7 +241,9 @@ done
 # summarize with multiqc
 multiqc --title "Boreal_Forest_Soils"
 ```
-but I prefer to use vsearch
+but I prefer to use vsearch.
+
+Note: Håvard presented a fastqc plot Monday morning.
 
 
 ## cumulative expected error (EE)
@@ -262,6 +265,27 @@ Note: EE is a positive, length-dependent, ever-growing value. EE = 1.0
 is often used to discard reads (50% chance of no-error in the read).
 
 
+try:
+``` bash
+head R1_eestats.log
+```
+Note: describe the table
+
+
+``` text
+Pos	Recs	PctRecs	Min_Q	Low_Q	Med_Q	Mean_Q	Hi_Q	Max_Q	Min_Pe	Low_Pe	Med_Pe	Mean_Pe	Hi_Pe	Max_Pe	Min_EE	Low_EE	Med_EE	Mean_EE	Hi_EE	Max_EE
+1	3262836	100.0	12.0	34.0	34.0	33.8	34.0	34.0	0.0004	0.0004	0.0004	0.00069	0.0004	0.063	0.00	0.00	0.00	0.00	0.00	0.06
+2	3262836	100.0	12.0	34.0	34.0	33.8	34.0	34.0	0.0004	0.0004	0.0004	0.00068	0.0004	0.063	0.00	0.00	0.00	0.00	0.00	0.13
+3	3262836	100.0	12.0	34.0	34.0	33.8	34.0	34.0	0.0004	0.0004	0.0004	0.00063	0.0004	0.063	0.00	0.00	0.00	0.00	0.00	0.19
+4	3262836	100.0	12.0	34.0	34.0	33.8	34.0	34.0	0.0004	0.0004	0.0004	0.0006	0.0004	0.063	0.00	0.00	0.00	0.00	0.00	0.25
+5	3262836	100.0	12.0	34.0	34.0	33.8	34.0	34.0	0.0004	0.0004	0.0004	0.00058	0.0004	0.063	0.00	0.00	0.00	0.00	0.00	0.32
+6	3262836	100.0	10.0	38.0	38.0	37.7	38.0	38.0	0.00016	0.00016	0.00016	0.0003	0.00016	0.1	0.00	0.00	0.00	0.00	0.00	0.42
+7	3262836	100.0	10.0	38.0	38.0	37.7	38.0	38.0	0.00016	0.00016	0.00016	0.0003	0.00016	0.1	0.00	0.00	0.00	0.00	0.00	0.46
+8	3262836	100.0	10.0	38.0	38.0	37.7	38.0	38.0	0.00016	0.00016	0.00016	0.00032	0.00016	0.1	0.00	0.00	0.00	0.00	0.00	0.52
+9	3262836	100.0	10.0	38.0	38.0	37.6	38.0	38.0	0.00016	0.00016	0.00016	0.00035	0.00016	0.1	0.00	0.00	0.00	0.00	0.00	0.58
+```
+
+
 ## good run
 
 ![bad](./images/R1_vs_R2_quality_good.png)
@@ -275,6 +299,11 @@ is often used to discard reads (50% chance of no-error in the read).
 ## mixed run
 
 ![mix](./images/R1_vs_R2_quality_mix.png)
+
+
+## our run
+
+![mix](./images/R1_vs_R2_quality_boreal.png)
 
 
 ## guess quality encoding
@@ -303,6 +332,15 @@ Letter          N   Freq MaxRun
 ```
 Note: most fastq files use an offset of 33, but beware that you might
 encounter older fastq files using a 64 offset.
+
+
+## SFF files
+
+vsearch can read them.
+
+Note: Roche 454 sequencing format, popular about 10 years ago. There
+are more than 60,000 datasets in that format available on Short Read
+Archive.
 
 
 
@@ -512,7 +550,14 @@ cutadapt \
 rm ${TMP_BARCODES}  # clean
 ```
 
-Note: launch first and describe while it is running.
+Note: launch first and describe while it is running. We search for
+exact tags, but you might want to allow 1 error (-e 0.15). Also, we
+did not use the fact that tags are present at both ends.
+
+
+## vsearch presentation
+
+Note: by Torbjørn
 
 
 
@@ -651,15 +696,20 @@ check what cutadapt does:
 # -g, cut after the occurence closest to 5'
 printf ">test\naaaACGTggggACGTaaaaa\n" | \
     cutadapt -g ACGT -O 4 - 2> /dev/null
+```
 
+``` text
+>test
+ggggACGTaaaaa
+```
+
+``` bash
 # -a, cut before the occurence most distant to 3'
 printf ">test\naaaACGTggggACGTaaaaa\n" | \
     cutadapt -a ACGT -O 4 - 2> /dev/null
 ```
 
 ``` text
->test
-ggggACGTaaaaa
 >test
 aaa
 ```
@@ -779,6 +829,11 @@ The `for` loop repeats the process for each fastq file in the project.
 ## Clustering
 
 
+``` bash
+cd ../results/
+```
+
+
 ## Global dereplication
 
 ``` bash
@@ -817,11 +872,10 @@ your needs are not covered.
 ``` bash
 ## Clustering
 FINAL_FASTA="Boreal_forest_soils_18SV4_48_samples.fas"
+TMP_REPRESENTATIVES="$(mktemp)"
+
 swarm \
-    -d 1 \
-    -f \
-    -t ${THREADS} \
-    -z \
+    -d 1 -f -t 1 -z \
     -i "${FINAL_FASTA/.fas/_1f.struct}" \
     -s "${FINAL_FASTA/.fas/_1f.stats}" \
     -w "${TMP_REPRESENTATIVES}" \
@@ -896,6 +950,20 @@ largest cluster, and the memory consumption. The term OTU is now used
 to designate 97%-based clusters. In that sense swarm produces ASVs.
 
 
+``` bash
+## Sort representatives sequences
+vsearch \
+    --fasta_width 0 \
+    --quiet \
+    --sortbysize ${TMP_REPRESENTATIVES} \
+    --output ${FINAL_FASTA/.fas/_1f_representatives.fas}
+
+rm ${TMP_REPRESENTATIVES}  # clean up
+```
+
+Note: necessary after using fastidious
+
+
 ## stats file
 
 ``` text
@@ -958,6 +1026,12 @@ AGCTCCAATAGCGTATATTAAAGTTGTTGCAGTTAAAAAGCTCGTAGTTGGATCTCGGGTCCAGGCTCGCGGTTCGTTTC
 Note: abundance is the total number of reads in that cluster. 
 
 
+## present swarm
+
+Note: done by Frédéric
+
+
+
 <!-- ----------------------------------------------------------------
 
                             Extra data
@@ -966,11 +1040,6 @@ Note: abundance is the total number of reads in that cluster.
 -->
 
 ## Useful extra data
-
-
-``` bash
-cd ../results/
-```
 
 
 ## Global expected error values
@@ -1147,7 +1216,124 @@ field. Come and help us!
 * allow global pairwise alignments between env and ref
 
 
-## pre-filter sequences
+complete code
+
+``` bash
+# download the UTAX version
+URL="https://github.com/vaulot/pr2_database/releases/download"
+VERSION="4.11.1"
+SOURCE="pr2_version_${VERSION}_UTAX.fasta"
+[[ -e "${SOURCE}.gz" ]] || \
+    wget "${URL}/${VERSION}/${SOURCE}.gz"
+
+# declare variables
+PRIMER_F="CCAGCASCYGCGGTAATTCC"
+PRIMER_R="TYRATCAAGAACGAAAGT"
+OUTPUT="${SOURCE/_UTAX*/}_${PRIMER_F}_${PRIMER_R}.fas"
+LOG="${OUTPUT/.fas/.log}"
+MIN_LENGTH=32
+MIN_F=$(( ${#PRIMER_F} * 2 / 3 ))
+MIN_R=$(( ${#PRIMER_R} * 2 / 3 ))
+CUTADAPT="cutadapt --discard-untrimmed --minimum-length ${MIN_LENGTH} -e 0.2"
+
+# trim
+zcat "${SOURCE}.gz" | \
+    dos2unix | \
+    sed '/^>/ s/;tax=k:/ /
+         /^>/ s/,[dpcofgs]:/|/g
+         /^>/ ! s/U/T/g' | \
+    ${CUTADAPT} -g "${PRIMER_F}" -O "${MIN_F}" - 2> "${LOG}" | \
+    ${CUTADAPT} -a "${PRIMER_R}" -O "${MIN_F}" - 2>> "${LOG}" > "${OUTPUT}"
+```
+
+
+first, get the reference sequences
+
+``` bash
+# download the UTAX version
+URL="https://github.com/vaulot/pr2_database/releases/download"
+VERSION="4.11.1"
+SOURCE="pr2_version_${VERSION}_UTAX.fasta"
+[[ -e "${SOURCE}.gz" ]] || \
+    wget "${URL}/${VERSION}/${SOURCE}.gz"
+```
+
+
+``` bash
+# declare variables
+PRIMER_F="CCAGCASCYGCGGTAATTCC"
+PRIMER_R="TYRATCAAGAACGAAAGT"
+OUTPUT="${SOURCE/_UTAX*/}_${PRIMER_F}_${PRIMER_R}.fas"
+LOG="${OUTPUT/.fas/.log}"
+MIN_LENGTH=32
+MIN_F=$(( ${#PRIMER_F} * 2 / 3 ))
+MIN_R=$(( ${#PRIMER_R} * 2 / 3 ))
+CUTADAPT="cutadapt --discard-untrimmed --minimum-length ${MIN_LENGTH} -e 0.2"
+```
+
+* `-e 0.1`: 117,699/176,813 = 66.5% of the references
+* `-e 0.2`: 140,688/176,813 = 79.5% of the references
+
+
+trim the references
+
+``` bash
+# trim
+zcat "${SOURCE}.gz" | \
+    dos2unix | \
+    sed '/^>/ s/;tax=k:/ /
+         /^>/ s/,[dpcofgs]:/|/g
+         /^>/ ! s/U/T/g' | \
+    ${CUTADAPT} -g "${PRIMER_F}" -O "${MIN_F}" - 2> "${LOG}" | \
+    ${CUTADAPT} -a "${PRIMER_R}" -O "${MIN_F}" - 2>> "${LOG}" \
+                > "${OUTPUT}"
+```
+
+
+## Taxonomic assignment
+
+complete code
+
+``` bash
+## Taxonomic assignment, search for best hits (eliminate chimeras and singletons first)
+echo "Taxonomic assignment..."
+VSEARCH="/scratch/mahe/bin/vsearch/bin/vsearch"
+QUERY="Boreal_forest_soils_18SV4_48_samples_1f_representatives.fas"
+UCHIME="${QUERY/.fas/.uchime}"
+RESULTS="${QUERY/.fas/.results}"
+DATABASE="../references/pr2_version_4.11.1_CCAGCASCYGCGGTAATTCC_TYRATCAAGAACGAAAGT.fas"
+MIN_ABUNDANCE=2
+
+awk '$NF == "N" {print $2}' "${UCHIME}" | \
+    grep --no-group-separator -A 1 -F -f - "${QUERY}" | \
+    ${VSEARCH} \
+        --fastx_filter - \
+        --sizein \
+        --minsize ${MIN_ABUNDANCE} \
+        --sizeout \
+        --quiet \
+        --fastaout - | \
+    ${VSEARCH} \
+        --usearch_global - \
+        --threads ${THREADS} \
+        --db "${DATABASE}" \
+        --dbmask none \
+        --qmask none \
+        --rowlen 0 \
+        --notrunclabels \
+        --userfields query+id1+target \
+        --maxaccepts 0 \
+        --maxrejects 32 \
+        --top_hits_only \
+        --output_no_hits \
+        --id 0.5 \
+        --iddef 1 \
+        --userout - | \
+    sed 's/;size=/_/ ; s/;//' > hits.representatives
+```
+
+
+pre-filter sequences
 
 ``` bash
 # eliminate chimeras and singletons first
@@ -1175,7 +1361,7 @@ positive (not a chimera) or a sign that the matching reference should
 be investigated.
 
 
-## Taxonomic assignment
+find the references closest to our environmental sequences
 
 ``` bash
 ## Taxonomic assignment, search for best hits
@@ -1208,6 +1394,25 @@ into account).
 
 
 ## Last-common ancestor
+
+if an env sequence is equidistant to several ref sequences, find the
+last-common ancestor (part of the taxonomic path that is common)
+
+``` bash
+## in case of multi-best hit, find the last-common ancestor
+python ../src/stampa_merge.py $(pwd)
+
+## sort by decreasing abundance
+sort -k2,2nr -k1,1d results.representatives > "${RESULTS}"
+
+## clean
+rm hits.representatives results.representatives
+```
+
+
+## Results
+
+show how it looks.
 
 
 
