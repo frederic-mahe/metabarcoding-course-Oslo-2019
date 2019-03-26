@@ -8,6 +8,16 @@
 
     ----------------------------------------------------------------
 -->
+
+live presentation:
+
+https://dna.uio.no/metabarcoding/reveal.js-3.7.0/
+
+source:
+
+https://github.com/frederic-mahe/metabarcoding-course-Oslo-2019
+
+
 ## Metabarcoding
 #### born of phylogeny
 
@@ -45,6 +55,22 @@ Note: to build a phylogeny, one needs to sequence the same gene from
 ## a primer on code
 
 Command line interface (shell)
+
+
+## login
+
+``` bash
+ssh abel.uio.no
+
+# reserve a cpu and some memory:
+qlogin --account YOURLOGIN --ntasks 1 --mem-per-cpu 3800M
+
+# To access all the installed software for the course:
+source /cluster/software/BIO9905/set.source
+
+# data and scripts are here:
+/work/tmp/BIO9905MERG1/torognes/fred
+```
 
 
 #### Tools
@@ -200,7 +226,7 @@ risk, Q30 means 0.1% and Q40 means 0.01%.
 * encoding type must be guessed
 
 
-## Paired-ends
+#### Paired-ends
 
 ``` shell
 zcat ES1A_S2_L001_R1_001.fastq.gz | head -n 1
@@ -214,7 +240,7 @@ zcat ES1A_S2_L001_R2_001.fastq.gz | head -n 1
 each R1 entry has a R2 counterpart.
 
 
-## check your files
+#### check your files
 
 usually provided by the sequencing facility, checks that files were
 not modified during transfer:
@@ -229,7 +255,7 @@ ES1A_S2_L001_R2_001.fastq.gz: OK
 ```
 
 
-## in-depth stats on fastq files
+#### in-depth stats on fastq files
 
 [fastqc](https://github.com/s-andrews/FastQC) reports are often provided by sequencing facilities:
 ``` bash
@@ -246,7 +272,7 @@ but I prefer to use vsearch.
 Note: Håvard presented a fastqc plot Monday morning.
 
 
-## cumulative expected error (EE)
+#### cumulative expected error (EE)
 
 `$$ EE = \sum_{i=0}^n 10^{-Q/10} $$`
 
@@ -1413,6 +1439,11 @@ rm hits.representatives results.representatives
 ## Results
 
 show how it looks.
+
+
+## Taxomomic bias
+
+![length_bias_per_clade](./images/length_per_taxa_18SV4.png)
 
 
 
