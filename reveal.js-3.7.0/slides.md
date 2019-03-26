@@ -638,9 +638,11 @@ Note: by Torbjørn
 ## Primer clipping
 
 
-The goal is to search . So far we have used cutadapt to find tags at
-the beginning of sequences. Now we are going to allow cutadapt to
-search anywhere in the reads.
+#### Find and remove primers
+
+So far we have used cutadapt to find tags at the beginning of
+sequences. Now we are going to allow cutadapt to search anywhere in
+the reads.
 
 
 ## complete script
