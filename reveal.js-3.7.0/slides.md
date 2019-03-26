@@ -1245,6 +1245,11 @@ S001    41      114     da5fbd349893e0d9f6780235339ea8a0dd8e3358        42      
 [how to produce network representations?](https://github.com/torognes/swarm/wiki/Frequently-Asked-Questions#how-to-use-the-output-of-the---internal-structure-option-to-produce-network-representations)
 
 
+## overview
+
+![pipeline overview1](./images/diapo_pipeline.png)
+
+
 
 <!-- ----------------------------------------------------------------
 
