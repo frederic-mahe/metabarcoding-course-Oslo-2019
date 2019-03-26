@@ -312,6 +312,47 @@ Pos	Recs	PctRecs	Min_Q	Low_Q	Med_Q	Mean_Q	Hi_Q	Max_Q	Min_Pe	Low_Pe	Med_Pe	Mean_P
 ```
 
 
+R code to produce the next plots:
+``` R
+library(tidyverse)
+
+setwd("/scratch/mahe/projects/Oslo_20190325/data/")
+title <- "Boreal Forest Soils 18S V4 (MiSeq 2x300 bp)"
+output <- "R1_vs_R2_quality.pdf"
+
+## Load data
+all_sets <- data.frame()
+for (read in c("R1", "R2")) {
+    input <- paste("./", read, "_eestats.log", sep = "")
+
+    a <- read.table(input, sep = "\t", header = TRUE) %>%
+        tbl_df() %>%
+        select(Pos, Min_EE, Low_EE, Med_EE, Hi_EE, Max_EE) %>%
+        mutate(read = read)
+    all_sets <- bind_rows(all_sets, a)
+}
+
+## Plot (facets)
+ggplot(data = all_sets, aes(x = Pos, y = Med_EE)) +
+    geom_linerange(aes(ymin = Low_EE, ymax = Hi_EE), colour = "burlywood") +
+    geom_point(shape = 19, size = 1, color = "firebrick") +
+    scale_x_continuous() +
+    theme_bw(base_size = 16) +
+    ggtitle(title) +
+    xlab("position") +
+    ylab("median expected error") +
+    facet_grid(. ~ read) +
+    coord_cartesian(ylim = c(0, 1.0))
+
+ggsave(output, width = 12, height = 5)
+
+output <- "R1_vs_R2_quality_boreal.png"
+ggsave(output, width = 12, height = 5)
+
+quit(save = "no")
+```
+
+
 ## good run
 
 ![bad](./images/R1_vs_R2_quality_good.png)
