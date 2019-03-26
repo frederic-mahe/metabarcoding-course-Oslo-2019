@@ -1030,7 +1030,7 @@ vsearch \
 rm ${TMP_REPRESENTATIVES}  # clean up
 ```
 
-Note: necessary after using fastidious
+necessary after using fastidious
 
 
 ## stats file
@@ -1048,6 +1048,8 @@ Note: necessary after using fastidious
 3233	18277	4d53f7da17c0c170de344ddd8a02fffa979dc975	7106	2325	6	6
 ```
 
+(see the next slide for a description of each column)
+
 Note: describe the first OTU (unique, reads, seed, seed abundance,
 sequence;size=1, number of steps. 15 steps, is that a lot? not really,
 aggregation paths are not straightforward. We can actually compute for
@@ -1055,7 +1057,17 @@ each sequence in the cluster its actual number of differences with the
 seed.
 
 
-![steps_vs_pairwise_distanc](./images/steps_vs_pairwise_distance_example.png)
+1. number of unique sequences in the OTU,
+2. total abundance of sequences in the OTU,
+3. identifier of the initial seed,
+4. initial seed abundance,
+5. number of sequences with an abundance of 1 in the OTU,
+6. maximum number of iterations before the OTU reached its natural limit,
+7. cummulated number of steps along the path joining the seed and the furthermost
+   amplicon in the OTU.
+
+
+![steps_vs_pairwise_distance](./images/steps_vs_pairwise_distance_example.png)
 
 Note: it is far less that expected, and rarely more than 10
 differences for 380 bp sequences (2.6% divergence).
@@ -1176,11 +1188,11 @@ its abundance in that sample.
       FASTA_FILE="${FASTA/*\//}"
       FASTA_FILE="${FASTA_FILE/.fas/}"
       echo $(( ++i )) ${FASTA_FILE} > /dev/stderr
-      "${SWARM}" \
+      swarm \
           -d 1 \
           -f \
           -z \
-          -t "${THREADS}" \
+          -t 1 \
           -l /dev/null \
           -o /dev/null \
           -s - \
@@ -1213,6 +1225,24 @@ S001    39      93      405908dae0e618d416452e2c938b30ae36b12040        52      
 S001    38      86      7263c21dadfb866fe5f42503e0750b340c1772fa        48      36      3       3
 S001    41      114     da5fbd349893e0d9f6780235339ea8a0dd8e3358        42      38      3       3
 ```
+
+(see the next slide for a description of each column)
+
+
+1. sample name,
+2. number of unique sequences in the OTU,
+3. total abundance of sequences in the OTU,
+4. identifier of the initial seed,
+5. initial seed abundance,
+6. number of sequences with an abundance of 1 in the OTU,
+7. maximum number of iterations before the OTU reached its natural limit,
+8. cummulated number of steps along the path joining the seed and the furthermost
+   amplicon in the OTU.
+
+
+## visualize OTUs as graphs
+
+[how to produce network representations?](https://github.com/torognes/swarm/wiki/Frequently-Asked-Questions#how-to-use-the-output-of-the---internal-structure-option-to-produce-network-representations)
 
 
 
@@ -1282,7 +1312,11 @@ field. Come and help us!
 ## Reference dataset
 
 * trim reference sequences (cutadapt),
-* allow global pairwise alignments between env and ref
+* pairwise global alignments between env and refs
+
+``` bash
+cd ../references/
+```
 
 
 complete code
@@ -1298,7 +1332,7 @@ SOURCE="pr2_version_${VERSION}_UTAX.fasta"
 # declare variables
 PRIMER_F="CCAGCASCYGCGGTAATTCC"
 PRIMER_R="TYRATCAAGAACGAAAGT"
-OUTPUT="${SOURCE/_UTAX*/}_${PRIMER_F}_${PRIMER_R}.fas"
+OUTPUT="${SOURCE/_UTAX*/}_${PRIMER_F}_${PRIMER_R}_full.fas"
 LOG="${OUTPUT/.fas/.log}"
 MIN_LENGTH=32
 MIN_F=$(( ${#PRIMER_F} * 2 / 3 ))
@@ -1332,7 +1366,7 @@ SOURCE="pr2_version_${VERSION}_UTAX.fasta"
 # declare variables
 PRIMER_F="CCAGCASCYGCGGTAATTCC"
 PRIMER_R="TYRATCAAGAACGAAAGT"
-OUTPUT="${SOURCE/_UTAX*/}_${PRIMER_F}_${PRIMER_R}.fas"
+OUTPUT="${SOURCE/_UTAX*/}_${PRIMER_F}_${PRIMER_R}_full.fas"
 LOG="${OUTPUT/.fas/.log}"
 MIN_LENGTH=32
 MIN_F=$(( ${#PRIMER_F} * 2 / 3 ))
@@ -1359,7 +1393,16 @@ zcat "${SOURCE}.gz" | \
 ```
 
 
+## Taxomomic bias
+
+![length bias per clade](./images/length_per_taxa_18SV4.png)
+
+
 ## Taxonomic assignment
+
+``` bash
+cd ../results/
+```
 
 complete code
 
@@ -1481,12 +1524,14 @@ rm hits.representatives results.representatives
 
 ## Results
 
-show how it looks.
+``` bash
+less -S Boreal_forest_soils_18SV4_48_samples_1f_representatives.results
+```
 
-
-## Taxomomic bias
-
-![length_bias_per_clade](./images/length_per_taxa_18SV4.png)
+1. OTU representative
+2. number of reads in the OTU
+3. taxonomic assignment
+4. closest references
 
 
 
@@ -1497,8 +1542,103 @@ show how it looks.
     ----------------------------------------------------------------
 -->
 
-## Merge data and apply basic filtering
+## OTU table
 
+
+#### pipeline overview
+
+![pipeline overview](./images/diapo_pipeline_final_colour.png)
+
+
+``` bash
+cd ../results/
+```
+
+
+#### Merge data, filter and create the OTU table
+
+``` bash
+## variables
+SAMPLES=$(find ../data/ -name "S0*.fas" | \
+              tr "\n" " " | sed 's/\n$//')
+N_SAMPLES=$(tr " " "\n" <<< ${SAMPLES} | wc -l)
+FASTA="Boreal_forest_soils_18SV4_${N_SAMPLES}_samples.fas"
+
+SRC="../src"
+SCRIPT="${SRC}/OTU_contingency_table_filtered2.py"
+REPRESENTATIVES="${FASTA/.fas/_1f_representatives.fas}"
+STATS="${FASTA/.fas/_1f.stats}"
+SWARMS="${FASTA/.fas/_1f.swarms}"
+QUALITY="${FASTA/.fas/.qual}"
+UCHIME="${FASTA/.fas/_1f_representatives.uchime}"
+ASSIGNMENTS="${FASTA/.fas/_1f_representatives.results}"
+DISTRIBUTION="${FASTA/.fas/.distr}"
+OTU_TABLE="${FASTA/.fas/.OTU.filtered.table}"
+ERROR="${FASTA/.fas/.OTU.filtered.table.error}"
+
+# check files
+[[ -s "${SCRIPT}" ]] && echo "script OK" || echo "KO script"
+[[ -s "${REPRESENTATIVES}" ]] && echo "representatives OK" || echo "KO representatives"
+[[ -s "${STATS}" ]] && echo "stats OK" || echo "KO stats"
+[[ -s "${SWARMS}" ]] && echo "swarms OK" || echo "KO swarms"
+[[ -s "${UCHIME}" ]] && echo "uchime OK" || echo "KO uchime"
+[[ -s "${QUALITY}" ]] && echo "quality OK" || echo "KO quality"
+[[ -s "${ASSIGNMENTS}" ]] && echo "script OK" || echo "KO script"
+
+## build the OTU table
+([[ -s "${SCRIPT}" ]] && \
+     [[ -s "${REPRESENTATIVES}" ]] && \
+     [[ -s "${STATS}" ]] && \
+     [[ -s "${SWARMS}" ]] && \
+     [[ -s "${UCHIME}" ]] && \
+     [[ -s "${QUALITY}" ]] && \
+     [[ -s "${ASSIGNMENTS}" ]]) && \
+    python \
+        "${SCRIPT}" \
+        "${REPRESENTATIVES}" \
+        "${STATS}" \
+        "${SWARMS}" \
+        "${UCHIME}" \
+        "${QUALITY}" \
+        "${ASSIGNMENTS}" \
+        "${DISTRIBUTION}" \
+        ${SAMPLES} | \
+        sed 's/#//g' > "${OTU_TABLE}" 2> "${ERROR}"
+
+# clean
+[[ -s "${ERROR}" ]] || rm -f "${ERROR}"
+```
+
+Note: no need to modify anything beside the first three lines
+
+
+keep:
+* OTUs that are not chimeras,
+* OTUs with EE/length <= 0.0002,
+* OTUs of abundance >= 3 or present in at least two samples
+
+Feel free to apply more stringent filtering
+
+
+``` bash
+less -S Boreal_forest_soils_18SV4_48_samples.OTU.filtered.table
+```
+
+
+content of the OTU table:
+1. OTU number
+2. total number of reads
+3. cloud (total number of unique sequences)
+4. amplicon (identifier of the OTU representative)
+5. length (length of the OTU representative)
+6. abundance (abundance of the OTU representative)
+7. chimera (is it a chimera? Yes, No, ?)
+8. spread (number of samples where the OTU occurs)
+9. quality (minimum expected error observed for the OTU representative, divided by sequence length)
+10. sequence (sequence of the OTU representative)
+11. identity (maximum similarity of the OTU representative with reference sequences)
+12. taxonomy (taxonomic assignment of the OTU representative)
+13. references (reference sequences closest to the OTU representative)
 
 
 
@@ -1509,18 +1649,22 @@ show how it looks.
     ----------------------------------------------------------------
 -->
 
-## Boundary
-
-Save what can be saved below a certain threshold. Add the weight of
-small OTUs to bigger ones.
-
-
-
 ## Conclusion
 
 Metabarcoding's main challenge is noise. Bioinformatics can solve part
 of the problem, but robust experimental designs with replicates and
 controls can do wonders.
+
+
+#### seed vs cloud
+
+![seed vs cloud](./images/seed_vs_cloud.png) <!-- .element height="50%" width="50%" -->
+
+
+#### post-super OTU breaking
+
+![before and after](./images/grasp_nodD_764_samples_1f.stats.before_after_OTU_breaking.png)
+
 
 <!-- two newlines for a new vertical slide  -->
 <!-- three newlines for a new horizontal slide  -->
