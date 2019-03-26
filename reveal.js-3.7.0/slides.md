@@ -63,7 +63,7 @@ Command line interface (shell)
 ssh abel.uio.no
 
 # reserve a cpu and some memory:
-qlogin --account YOURLOGIN --ntasks 1 --mem-per-cpu 3800M
+qlogin --account ln0002k --ntasks 1 --mem-per-cpu 3800M
 
 # To access all the installed software for the course:
 source /cluster/software/BIO9905/set.source
