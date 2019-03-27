@@ -1414,7 +1414,8 @@ complete code
 ``` bash
 ## Taxonomic assignment, search for best hits (eliminate chimeras and singletons first)
 echo "Taxonomic assignment..."
-VSEARCH="/scratch/mahe/bin/vsearch/bin/vsearch"
+VSEARCH=$(which vsearch)
+THREADS=1
 QUERY="Boreal_forest_soils_18SV4_48_samples_1f_representatives.fas"
 UCHIME="${QUERY/.fas/.uchime}"
 RESULTS="${QUERY/.fas/.results}"
@@ -1517,7 +1518,7 @@ last-common ancestor (part of the taxonomic path that is common)
 
 ``` bash
 ## in case of multi-best hit, find the last-common ancestor
-python ../src/stampa_merge.py $(pwd)
+python2 ../src/stampa_merge.py $(pwd)
 
 ## sort by decreasing abundance
 sort -k2,2nr -k1,1d results.representatives > "${RESULTS}"
@@ -1535,8 +1536,9 @@ less -S Boreal_forest_soils_18SV4_48_samples_1f_representatives.results
 
 1. OTU representative
 2. number of reads in the OTU
-3. taxonomic assignment
-4. closest references
+3. percentage of similarity
+4. taxonomic assignment
+5. closest references
 
 
 
@@ -1598,7 +1600,7 @@ ERROR="${FASTA/.fas/.OTU.filtered.table.error}"
      [[ -s "${UCHIME}" ]] && \
      [[ -s "${QUALITY}" ]] && \
      [[ -s "${ASSIGNMENTS}" ]]) && \
-    python \
+    python2 \
         "${SCRIPT}" \
         "${REPRESENTATIVES}" \
         "${STATS}" \
@@ -1644,6 +1646,11 @@ content of the OTU table:
 11. identity (maximum similarity of the OTU representative with reference sequences)
 12. taxonomy (taxonomic assignment of the OTU representative)
 13. references (reference sequences closest to the OTU representative)
+
+
+Taxonomic barchart
+
+![phylum level](./images/Boreal_forest_soils_18SV4_48_samples_phylum_level.png)
 
 
 
