@@ -1,5 +1,7 @@
 # Metabarcoding
-### easy-peasy
+### head first
+
+(Frédéric Mahé, Oslo University, March 24-25 2019)
 
 
 <!-- ----------------------------------------------------------------
@@ -16,6 +18,10 @@ https://dna.uio.no/metabarcoding/reveal.js-3.7.0/
 source:
 
 https://github.com/frederic-mahe/metabarcoding-course-Oslo-2019
+
+complete copy of my pipeline:
+
+https://github.com/frederic-mahe/swarm/wiki/Fred's-metabarcoding-pipeline
 
 
 ## Metabarcoding
@@ -69,7 +75,7 @@ qlogin --account ln0002k --ntasks 1 --mem-per-cpu 3800M
 source /cluster/software/BIO9905/set.source
 
 # data and scripts are here:
-/work/tmp/BIO9905MERG1/torognes/fred
+cd /work/tmp/BIO9905MERG1/torognes/fred
 ```
 
 
@@ -150,7 +156,7 @@ command1 input.fastq > tmp1.fastq
 command2 tmp1.fastq > tmp2.fastq
 command3 tmp2.fastq > final_output.fastq
 
-# piping avoids temporary files:
+# use pipes to avoid temporary files:
 command1 input.fastq | \
     command2 | \
     command3 > final_output.fastq
@@ -261,7 +267,7 @@ ES1A_S2_L001_R2_001.fastq.gz: OK
 ``` bash
 # run FastQC
 for f in *.fastq.gz ; do
-    fastqc --quiet ${f}
+    fastqc --quiet "${f}"
 done
 
 # summarize with multiqc
@@ -285,7 +291,7 @@ for PAIR in 1 2 ; do
         --output R${PAIR}_eestats.log
 done
 ```
-Visualize with some `R` and `tidyverse`
+Visualize with [R](https://cran.r-project.org/) and the package [tidyverse](https://www.tidyverse.org/)
 
 Note: EE is a positive, length-dependent, ever-growing value. EE = 1.0
 is often used to discard reads (50% chance of no-error in the read).
@@ -372,6 +378,8 @@ quit(save = "no")
 
 ![mix](./images/R1_vs_R2_quality_boreal.png)
 
+excellent expected error values!
+
 
 ## guess quality encoding
 
@@ -413,6 +421,20 @@ Archive.
 
 <!-- ----------------------------------------------------------------
 
+                      pipeline overview
+
+    ----------------------------------------------------------------
+-->
+
+## pipeline overview
+
+
+![pipeline overview1](./images/diapo_pipeline.png)
+
+
+
+<!-- ----------------------------------------------------------------
+
                                 Merge
 
     ----------------------------------------------------------------
@@ -433,11 +455,11 @@ THREADS=1
 
 vsearch \
     --threads ${THREADS} \
-    --fastq_mergepairs ${FORWARD} \
-    --reverse ${REVERSE} \
+    --fastq_mergepairs "${FORWARD}" \
+    --reverse "${REVERSE}" \
     --fastq_ascii ${ENCODING} \
     --fastq_allowmergestagger \
-    --fastqout ${OUTPUT} 2> ${LOG}
+    --fastqout "${OUTPUT}" 2> ${LOG}
 ```
 creates `ES1A_S2.fastq` and `ES1A_S2.log`
 Note: allowmergestagger allows to merge reads that are shorter than
@@ -624,7 +646,7 @@ did not use the fact that tags are present at both ends.
 
 ## vsearch presentation
 
-Note: by Torbjørn
+(by Torbjørn Rognes)
 
 
 
@@ -1109,7 +1131,7 @@ Note: abundance is the total number of reads in that cluster.
 
 ## present swarm
 
-Note: done by Frédéric
+(using Torbjørn Rognes' slides)
 
 
 
@@ -1243,11 +1265,6 @@ S001    41      114     da5fbd349893e0d9f6780235339ea8a0dd8e3358        42      
 ## visualize OTUs as graphs
 
 [how to produce network representations?](https://github.com/torognes/swarm/wiki/Frequently-Asked-Questions#how-to-use-the-output-of-the---internal-structure-option-to-produce-network-representations)
-
-
-## overview
-
-![pipeline overview1](./images/diapo_pipeline.png)
 
 
 
@@ -1551,8 +1568,6 @@ less -S Boreal_forest_soils_18SV4_48_samples_1f_representatives.results
 
 ## OTU table
 
-
-#### pipeline overview
 
 ![pipeline overview](./images/diapo_pipeline_final_colour.png)
 
